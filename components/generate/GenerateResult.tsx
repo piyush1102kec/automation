@@ -6,6 +6,7 @@ import { CopyButton } from '@/components/ui/CopyButton';
 import { Button } from '@/components/ui/Button';
 import { TypeBadge } from '@/components/ui/Badge';
 import type { PostType } from '@/lib/post-types';
+import { PLATFORMS, type PlatformId } from '@/lib/platforms';
 import { formatCostUsd, formatTokens, formatDuration } from '@/lib/cost-calculator';
 
 interface GenerateMeta {
@@ -17,14 +18,15 @@ interface GenerateMeta {
 
 interface GenerateResultProps {
   content: string;
-  postType: PostType;
+  postType: PostType | string;
   topic: string;
   postId?: number;
   meta?: GenerateMeta | null;
+  platform?: PlatformId;
   onSave?: () => void;
 }
 
-export function GenerateResult({ content, postType, topic, postId, meta, onSave }: GenerateResultProps) {
+export function GenerateResult({ content, postType, topic, postId, meta, platform = 'linkedin', onSave }: GenerateResultProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(!!postId);
   const [marking, setMarking] = useState(false);
@@ -65,6 +67,9 @@ export function GenerateResult({ content, postType, topic, postId, meta, onSave 
 
   const wordCount = editContent.split(/\s+/).filter(Boolean).length;
   const charCount = editContent.length;
+  const platformConfig = PLATFORMS[platform] ?? PLATFORMS.linkedin;
+  const charLimit = platformConfig.maxChars;
+  const overLimit = charCount > charLimit;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-hidden animate-slide-up">
@@ -108,7 +113,7 @@ export function GenerateResult({ content, postType, topic, postId, meta, onSave 
         </div>
       </div>
 
-      {/* LinkedIn post preview */}
+      {/* Post preview */}
       <div className="p-4">
         <div className="flex items-start gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-linkedin to-sky-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm">
@@ -116,7 +121,7 @@ export function GenerateResult({ content, postType, topic, postId, meta, onSave 
           </div>
           <div>
             <div className="text-sm font-semibold text-slate-900">Bitloom</div>
-            <div className="text-xs text-slate-400">AI + CRM Automation · Just now</div>
+            <div className="text-xs text-slate-400">{platformConfig.name} · Just now</div>
           </div>
         </div>
 
@@ -138,9 +143,9 @@ export function GenerateResult({ content, postType, topic, postId, meta, onSave 
       <div className="px-4 pb-2 flex items-center gap-3 text-xs text-slate-400">
         <span>{wordCount} words</span>
         <span>·</span>
-        <span>{charCount} chars</span>
-        {charCount > 3000 && (
-          <span className="text-amber-500">⚠ LinkedIn limit is ~3,000 chars</span>
+        <span className={overLimit ? 'text-red-500 font-semibold' : ''}>{charCount} / {charLimit.toLocaleString()} chars</span>
+        {overLimit && (
+          <span className="text-red-500">Over {platformConfig.name} limit</span>
         )}
       </div>
 
@@ -165,15 +170,17 @@ export function GenerateResult({ content, postType, topic, postId, meta, onSave 
           </Button>
         )}
 
-        <a
-          href="https://www.linkedin.com/feed/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-auto inline-flex items-center gap-1.5 text-xs text-linkedin hover:underline font-medium"
-        >
-          Open LinkedIn
-          <ExternalLink className="w-3 h-3" />
-        </a>
+        {platformConfig.profileUrl && (
+          <a
+            href={platformConfig.profileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center gap-1.5 text-xs text-linkedin hover:underline font-medium"
+          >
+            Open {platformConfig.name}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
       </div>
     </div>
   );

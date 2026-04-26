@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import {
   LayoutDashboard, PenLine, Clock, BookOpen,
   Newspaper, BarChart2, Settings, Zap,
-  ChevronRight,
+  ChevronRight, CalendarDays,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -22,6 +22,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/posts', label: 'All Posts', icon: BookOpen },
       { href: '/scheduled', label: 'Scheduled', icon: Clock },
+      { href: '/schedule', label: 'Auto-Schedule', icon: CalendarDays },
     ],
   },
   {
