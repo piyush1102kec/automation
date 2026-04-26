@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generatePostStream } from '@/lib/post-generator';
+import { generatePostStream, type GenerateMeta } from '@/lib/post-generator';
 import { createPost } from '@/lib/db-queries';
 import type { PostType, PostTone } from '@/lib/post-types';
 
@@ -19,24 +19,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'postType and topic are required' }, { status: 400 });
     }
 
-    // Stream the response
     const encoder = new TextEncoder();
     let fullContent = '';
-    let researchData: unknown = null;
+    let meta: GenerateMeta | null = null;
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of generatePostStream(postType, topic, tone ?? 'professional')) {
-            // Detect research metadata marker
-            if (chunk.includes('__RESEARCH__')) {
-              const parts = chunk.split('__RESEARCH__');
-              if (parts[0]) {
-                fullContent += parts[0];
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: parts[0] })}\n\n`));
+            if (chunk.includes('__META__')) {
+              const parts = chunk.split('__META__');
+              const textPart = parts[0];
+              if (textPart) {
+                fullContent += textPart;
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: textPart })}\n\n`));
               }
               try {
-                researchData = JSON.parse(parts[1]);
+                meta = JSON.parse(parts[1]) as GenerateMeta;
               } catch { /* ignore */ }
             } else {
               fullContent += chunk;
@@ -44,7 +43,7 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Save to DB
+          // Save post with full token + cost data
           let postId: number | undefined;
           try {
             const post = createPost({
@@ -53,13 +52,27 @@ export async function POST(req: NextRequest) {
               topic,
               tone: tone ?? 'professional',
               content: fullContent.trim(),
-              research: researchData ? JSON.stringify(researchData) : undefined,
+              research: meta ? JSON.stringify({ query: meta.query, results: meta.results, summary: meta.researchSummary }) : undefined,
               status: 'draft',
+              input_tokens: meta?.inputTokens ?? 0,
+              output_tokens: meta?.outputTokens ?? 0,
+              generation_time_ms: meta?.timeMs ?? 0,
+              total_cost_usd: meta?.costUsd ?? 0,
+              model: meta?.model ?? 'claude-sonnet-4-5',
             });
             postId = post.id;
-          } catch { /* DB save failure shouldn't break stream */ }
+          } catch { /* DB failure shouldn't break stream */ }
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', postId })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'done',
+            postId,
+            meta: meta ? {
+              inputTokens: meta.inputTokens,
+              outputTokens: meta.outputTokens,
+              timeMs: meta.timeMs,
+              costUsd: meta.costUsd,
+            } : null,
+          })}\n\n`));
           controller.close();
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Generation failed';

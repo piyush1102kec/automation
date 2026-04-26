@@ -4,17 +4,31 @@ import { useState, useRef } from 'react';
 import { GenerateForm } from '@/components/generate/GenerateForm';
 import { GenerateResult } from '@/components/generate/GenerateResult';
 import type { PostType, PostTone } from '@/lib/post-types';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, AlertCircle } from 'lucide-react';
+
+interface GenerateMeta {
+  inputTokens: number;
+  outputTokens: number;
+  timeMs: number;
+  costUsd: number;
+}
+
+interface ResultState {
+  content: string;
+  postType: PostType;
+  topic: string;
+  postId?: number;
+  meta?: GenerateMeta | null;
+}
 
 export default function GeneratePage() {
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState('');
-  const [result, setResult] = useState<{ content: string; postType: PostType; topic: string; postId?: number } | null>(null);
+  const [result, setResult] = useState<ResultState | null>(null);
   const [error, setError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
   const handleGenerate = async (postType: PostType, topic: string, tone: PostTone) => {
-    // Cancel any in-flight request
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
@@ -25,6 +39,7 @@ export default function GeneratePage() {
 
     let accumulated = '';
     let postId: number | undefined;
+    let meta: GenerateMeta | null = null;
 
     try {
       const res = await fetch('/api/generate', {
@@ -35,7 +50,7 @@ export default function GeneratePage() {
       });
 
       if (!res.ok || !res.body) {
-        setError('Generation failed. Check your API key.');
+        setError('Generation failed. Check your API key and try again.');
         return;
       }
 
@@ -57,6 +72,7 @@ export default function GeneratePage() {
               setStreaming(accumulated);
             } else if (event.type === 'done') {
               postId = event.postId;
+              meta = event.meta ?? null;
             } else if (event.type === 'error') {
               setError(event.error);
             }
@@ -64,7 +80,7 @@ export default function GeneratePage() {
         }
       }
 
-      setResult({ content: accumulated.trim(), postType, topic, postId });
+      setResult({ content: accumulated.trim(), postType, topic, postId, meta });
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         setError('Something went wrong. Please try again.');
@@ -75,44 +91,45 @@ export default function GeneratePage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-[1200px]">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-linkedin" />
-          Generate Post
-        </h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          AI-powered LinkedIn content for Bitloom, ready in seconds
+        <div className="flex items-center gap-2 mb-1">
+          <Sparkles className="w-5 h-5 text-linkedin" />
+          <h1 className="text-xl font-bold text-slate-900">Generate Post</h1>
+        </div>
+        <p className="text-sm text-slate-500">
+          AI-powered LinkedIn content — researches, drafts, and tracks cost automatically
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Form */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-card p-5">
           <GenerateForm onGenerate={handleGenerate} loading={loading} />
         </div>
 
         {/* Right: Result */}
         <div>
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 mb-4">
-              {error}
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 mb-4">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
             </div>
           )}
 
           {loading && !result && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center gap-2 mb-3">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-card p-5">
+              <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2 bg-linkedin rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <div className="w-2 h-2 bg-linkedin rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                 <div className="w-2 h-2 bg-linkedin rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                <span className="text-xs text-gray-500 ml-1">Researching + drafting…</span>
+                <span className="text-xs text-slate-500 ml-1">Researching and drafting your post…</span>
               </div>
               {streaming && (
-                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap border-l-2 border-linkedin pl-3">
+                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap border-l-2 border-linkedin pl-4 bg-slate-50/50 py-2 rounded-r-lg">
                   {streaming}
-                  <span className="inline-block w-0.5 h-4 bg-linkedin ml-0.5 animate-pulse" />
+                  <span className="cursor-blink" />
                 </div>
               )}
             </div>
@@ -124,13 +141,17 @@ export default function GeneratePage() {
               postType={result.postType}
               topic={result.topic}
               postId={result.postId}
+              meta={result.meta}
             />
           )}
 
           {!loading && !result && !error && (
-            <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 text-center">
-              <Sparkles className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Your generated post will appear here</p>
+            <div className="bg-white rounded-xl border-2 border-dashed border-slate-200 p-10 text-center">
+              <div className="w-12 h-12 rounded-full bg-linkedin-light flex items-center justify-center mx-auto mb-3">
+                <Sparkles className="w-6 h-6 text-linkedin" />
+              </div>
+              <p className="text-sm font-medium text-slate-600 mb-1">Your post will appear here</p>
+              <p className="text-xs text-slate-400">Token usage and cost shown after generation</p>
             </div>
           )}
         </div>

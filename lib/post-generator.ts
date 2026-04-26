@@ -1,78 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { searchGoogle, buildSearchQuery, type SerpResult } from './serp';
 import { POST_TYPES, type PostType, type PostTone } from './post-types';
+import { calcCostUsd } from './cost-calculator';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MODEL = 'claude-sonnet-4-5';
 
-export interface GenerateResult {
-  content: string;
-  research: {
-    query: string;
-    results: SerpResult[];
-    summary: string;
-  };
-}
-
-export async function generatePost(
-  postType: PostType,
-  topic: string,
-  tone: PostTone,
-): Promise<GenerateResult> {
-  const config = POST_TYPES[postType];
-
-  // Step 1: Research via SerpAPI
-  const query = buildSearchQuery(postType, topic);
-  const results = await searchGoogle(query);
-
-  // Step 2: Research synthesis via Claude
-  let researchSummary = '';
-  if (results.length > 0) {
-    const researchRes = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 800,
-      system: 'You are a research assistant. Extract the 3-5 most relevant, specific, and recent insights from the provided search results. Focus on data points, statistics, and concrete examples. Be concise.',
-      messages: [{
-        role: 'user',
-        content: `Topic: ${topic}\n\nSearch Results:\n${results.map((r, i) =>
-          `[${i + 1}] ${r.title}\n${r.snippet}\nURL: ${r.url}`
-        ).join('\n\n')}\n\nExtract key insights relevant to a LinkedIn post about "${topic}".`,
-      }],
-    });
-    researchSummary = (researchRes.content[0] as { text: string }).text;
-  }
-
-  // Step 3: Post drafting via Claude
-  const toneInstructions: Record<PostTone, string> = {
-    professional: 'Tone: Professional, authoritative, and insight-driven.',
-    casual: 'Tone: Conversational, warm, and approachable. Like talking to a peer.',
-    provocative: 'Tone: Bold and contrarian. Challenge conventional wisdom. Make people stop scrolling.',
-    storytelling: 'Tone: Narrative-driven. Start with a scene or moment. Draw the reader in.',
-  };
-
-  const userPrompt = `Draft a LinkedIn post for Bitloom.
-
-Post Type: ${config.label}
-Topic: ${topic}
-${toneInstructions[tone]}
-Content Guidance: ${config.contentGuidance}
-
-${researchSummary ? `Research Insights:\n${researchSummary}` : 'Write from your knowledge of AI/CRM trends.'}
-
-Return ONLY the final LinkedIn post, ready to publish. No preamble, no explanation.`;
-
-  const draftRes = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 1024,
-    system: config.systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const content = (draftRes.content[0] as { text: string }).text;
-
-  return {
-    content,
-    research: { query, results, summary: researchSummary },
-  };
+export interface GenerateMeta {
+  inputTokens: number;
+  outputTokens: number;
+  timeMs: number;
+  costUsd: number;
+  model: string;
+  query: string;
+  results: SerpResult[];
+  researchSummary: string;
 }
 
 export async function* generatePostStream(
@@ -80,16 +22,20 @@ export async function* generatePostStream(
   topic: string,
   tone: PostTone,
 ): AsyncGenerator<string> {
+  const startTime = Date.now();
   const config = POST_TYPES[postType];
 
-  // Research phase (non-streaming)
+  // Research phase
   const query = buildSearchQuery(postType, topic);
   const results = await searchGoogle(query);
 
   let researchSummary = '';
+  let researchInputTokens = 0;
+  let researchOutputTokens = 0;
+
   if (results.length > 0) {
     const researchRes = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: MODEL,
       max_tokens: 800,
       system: 'You are a research assistant. Extract 3-5 specific, recent insights from search results. Concise bullet points only.',
       messages: [{
@@ -100,6 +46,8 @@ export async function* generatePostStream(
       }],
     });
     researchSummary = (researchRes.content[0] as { text: string }).text;
+    researchInputTokens = researchRes.usage.input_tokens;
+    researchOutputTokens = researchRes.usage.output_tokens;
   }
 
   const toneInstructions: Record<PostTone, string> = {
@@ -120,9 +68,8 @@ ${researchSummary ? `Research:\n${researchSummary}` : ''}
 
 Return ONLY the final LinkedIn post. No preamble.`;
 
-  // Streaming draft phase
   const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-5',
+    model: MODEL,
     max_tokens: 1024,
     system: config.systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
@@ -137,6 +84,25 @@ Return ONLY the final LinkedIn post. No preamble.`;
     }
   }
 
-  // Yield research metadata as final JSON marker
-  yield `\n\n__RESEARCH__${JSON.stringify({ query, results, summary: researchSummary })}`;
+  const finalMsg = await stream.finalMessage();
+  const draftInputTokens = finalMsg.usage.input_tokens;
+  const draftOutputTokens = finalMsg.usage.output_tokens;
+
+  const totalInput = researchInputTokens + draftInputTokens;
+  const totalOutput = researchOutputTokens + draftOutputTokens;
+  const timeMs = Date.now() - startTime;
+  const costUsd = calcCostUsd(MODEL, totalInput, totalOutput);
+
+  const meta: GenerateMeta = {
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    timeMs,
+    costUsd,
+    model: MODEL,
+    query,
+    results,
+    researchSummary,
+  };
+
+  yield `\n\n__META__${JSON.stringify(meta)}`;
 }
