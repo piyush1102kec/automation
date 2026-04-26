@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Sparkles, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { POST_TYPES, TONES, getTodayPostType, type PostType, type PostTone } from '@/lib/post-types';
+import { TONES, type PostTone } from '@/lib/post-types';
+import { PLATFORMS, getPlatformPostTypes, type PlatformId } from '@/lib/platforms';
 
 interface CustomTone {
   id: string;
@@ -18,17 +19,33 @@ interface TopicShortcut {
 }
 
 interface GenerateFormProps {
-  onGenerate: (postType: PostType, topic: string, tone: PostTone) => void;
+  onGenerate: (postType: string, topic: string, tone: string, platform: PlatformId) => void;
   loading: boolean;
 }
 
+// Platform brand colors for the selector
+const PLATFORM_STYLES: Record<PlatformId, { active: string; dot: string }> = {
+  linkedin: { active: 'border-[#0A66C2] bg-[#0A66C2] text-white', dot: '#0A66C2' },
+  twitter: { active: 'border-[#1DA1F2] bg-[#1DA1F2] text-white', dot: '#1DA1F2' },
+  instagram: { active: 'border-[#E1306C] bg-gradient-to-r from-[#833AB4] via-[#E1306C] to-[#F77737] text-white', dot: '#E1306C' },
+  facebook: { active: 'border-[#1877F2] bg-[#1877F2] text-white', dot: '#1877F2' },
+  threads: { active: 'border-slate-900 bg-slate-900 text-white', dot: '#000000' },
+};
+
 export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
-  const [postType, setPostType] = useState<PostType>(getTodayPostType());
+  const [platform, setPlatform] = useState<PlatformId>('linkedin');
+  const [postType, setPostType] = useState<string>('');
   const [topic, setTopic] = useState('');
-  const [tone, setTone] = useState<PostTone>('professional');
+  const [tone, setTone] = useState<string>('professional');
   const [customTones, setCustomTones] = useState<CustomTone[]>([]);
   const [shortcuts, setShortcuts] = useState<TopicShortcut[]>([]);
   const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // When platform changes, reset post type to first type of new platform
+  useEffect(() => {
+    const types = getPlatformPostTypes(platform);
+    setPostType(types[0]?.id ?? '');
+  }, [platform]);
 
   useEffect(() => {
     fetch('/api/settings?resource=tones')
@@ -47,52 +64,80 @@ export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!topic.trim()) return;
-    onGenerate(postType, topic.trim(), tone);
+    if (!topic.trim() || !postType) return;
+    onGenerate(postType, topic.trim(), tone, platform);
   };
 
-  const todayType = getTodayPostType();
+  const platformPostTypes = getPlatformPostTypes(platform);
+  const platformConfig = PLATFORMS[platform];
 
   // Merge system + custom tones
   const allTones = [
-    ...(Object.entries(TONES) as [PostTone, string][]).map(([id, label]) => ({ id, label, system: true })),
-    ...customTones.map(t => ({ id: t.id as PostTone, label: t.label, system: false })),
+    ...(Object.entries(TONES) as [PostTone, string][]).map(([id, label]) => ({ id, label })),
+    ...customTones.map(t => ({ id: t.id, label: t.label })),
   ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Platform Selector */}
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2.5">
+          Platform
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {(Object.entries(PLATFORMS) as [PlatformId, typeof PLATFORMS[PlatformId]][]).map(([id, config]) => {
+            const styles = PLATFORM_STYLES[id];
+            const active = platform === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPlatform(id)}
+                className={`px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all flex items-center gap-2 ${
+                  active ? styles.active + ' shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: active ? 'rgba(255,255,255,0.8)' : styles.dot }}
+                />
+                {config.name}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 text-xs text-slate-400">
+          Limit: <span className="font-medium text-slate-600">{platformConfig.maxChars.toLocaleString()} chars</span>
+          {platformConfig.hashtagRange && (
+            <span className="ml-2">· Hashtags: <span className="font-medium text-slate-600">{platformConfig.hashtagRange[0]}–{platformConfig.hashtagRange[1]}</span></span>
+          )}
+        </div>
+      </div>
+
       {/* Post Type */}
       <div>
         <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2.5">
           Post Type
         </label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {(Object.entries(POST_TYPES) as [PostType, (typeof POST_TYPES)[PostType]][]).map(([key, config]) => (
+        <div className="grid grid-cols-2 gap-2">
+          {platformPostTypes.map((config) => (
             <button
-              key={key}
+              key={config.id}
               type="button"
-              onClick={() => setPostType(key)}
+              onClick={() => setPostType(config.id)}
               className={`px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition-all ${
-                postType === key
+                postType === config.id
                   ? 'border-linkedin bg-linkedin text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-linkedin/40 hover:text-linkedin hover:bg-linkedin-light/40'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-linkedin/40 hover:text-linkedin hover:bg-blue-50/40'
               }`}
             >
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: postType === key ? 'rgba(255,255,255,0.7)' : config.color }}
-                />
-                {config.label}
+              <div className="font-semibold">{config.label}</div>
+              <div className={`text-[10px] mt-0.5 ${postType === config.id ? 'text-white/70' : 'text-slate-400'}`}>
+                {config.idealChars ? `~${config.idealChars} chars` : `≤${PLATFORMS[platform].maxChars} chars`}
               </div>
             </button>
           ))}
         </div>
-        {postType === todayType && (
-          <div className="mt-2 text-xs text-linkedin bg-linkedin-light px-3 py-1.5 rounded-lg">
-            ✓ Today&apos;s scheduled type
-          </div>
-        )}
       </div>
 
       {/* Topic */}
@@ -120,7 +165,7 @@ export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
                 key={s.id}
                 type="button"
                 onClick={() => { setTopic(s.topic); setShowShortcuts(false); }}
-                className="text-xs bg-slate-100 hover:bg-linkedin-light hover:text-linkedin text-slate-600 px-2.5 py-1 rounded-full border border-slate-200 hover:border-linkedin/30 transition-colors"
+                className="text-xs bg-slate-100 hover:bg-blue-50 hover:text-linkedin text-slate-600 px-2.5 py-1 rounded-full border border-slate-200 hover:border-linkedin/30 transition-colors"
               >
                 {s.topic.length > 50 ? s.topic.slice(0, 50) + '…' : s.topic}
               </button>
@@ -131,7 +176,7 @@ export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
         <textarea
           value={topic}
           onChange={e => setTopic(e.target.value)}
-          placeholder={POST_TYPES[postType].defaultTopic}
+          placeholder={platformPostTypes.find(t => t.id === postType)?.defaultTopic ?? 'Describe your topic…'}
           className="input-base resize-none text-sm"
           rows={3}
           required
@@ -152,7 +197,7 @@ export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
             <button
               key={id}
               type="button"
-              onClick={() => setTone(id as PostTone)}
+              onClick={() => setTone(id)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                 tone === id
                   ? 'bg-linkedin border-linkedin text-white'
@@ -167,7 +212,7 @@ export function GenerateForm({ onGenerate, loading }: GenerateFormProps) {
 
       <Button type="submit" size="lg" loading={loading} className="w-full !rounded-xl font-semibold">
         <Sparkles className="w-4 h-4" />
-        {loading ? 'Generating…' : 'Generate Post'}
+        {loading ? 'Generating…' : `Generate ${PLATFORMS[platform].name} Post`}
       </Button>
     </form>
   );

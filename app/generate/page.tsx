@@ -3,7 +3,8 @@
 import { useState, useRef } from 'react';
 import { GenerateForm } from '@/components/generate/GenerateForm';
 import { GenerateResult } from '@/components/generate/GenerateResult';
-import type { PostType, PostTone } from '@/lib/post-types';
+import type { PostTone } from '@/lib/post-types';
+import type { PlatformId } from '@/lib/platforms';
 import { Sparkles, AlertCircle } from 'lucide-react';
 
 interface GenerateMeta {
@@ -15,8 +16,9 @@ interface GenerateMeta {
 
 interface ResultState {
   content: string;
-  postType: PostType;
+  postType: string;
   topic: string;
+  platform: PlatformId;
   postId?: number;
   meta?: GenerateMeta | null;
 }
@@ -28,7 +30,7 @@ export default function GeneratePage() {
   const [error, setError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  const handleGenerate = async (postType: PostType, topic: string, tone: PostTone) => {
+  const handleGenerate = async (postType: string, topic: string, tone: string, platform: PlatformId) => {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
@@ -45,7 +47,7 @@ export default function GeneratePage() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postType, topic, tone }),
+        body: JSON.stringify({ postType, topic, tone, platform }),
         signal: abortRef.current.signal,
       });
 
@@ -80,7 +82,7 @@ export default function GeneratePage() {
         }
       }
 
-      setResult({ content: accumulated.trim(), postType, topic, postId, meta });
+      setResult({ content: accumulated.trim(), postType, topic, platform, postId, meta });
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         setError('Something went wrong. Please try again.');
@@ -99,7 +101,7 @@ export default function GeneratePage() {
           <h1 className="text-xl font-bold text-slate-900">Generate Post</h1>
         </div>
         <p className="text-sm text-slate-500">
-          AI-powered LinkedIn content — researches, drafts, and tracks cost automatically
+          AI-powered content for any platform — researches, drafts, and tracks cost automatically
         </p>
       </div>
 
@@ -140,6 +142,7 @@ export default function GeneratePage() {
               content={result.content}
               postType={result.postType}
               topic={result.topic}
+              platform={result.platform}
               postId={result.postId}
               meta={result.meta}
             />

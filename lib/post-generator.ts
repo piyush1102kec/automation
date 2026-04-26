@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { searchGoogle, buildSearchQuery, type SerpResult } from './serp';
 import { POST_TYPES, type PostType, type PostTone } from './post-types';
+import { PLATFORMS, getPlatformPostType, type PlatformId } from './platforms';
 import { calcCostUsd } from './cost-calculator';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -18,15 +19,38 @@ export interface GenerateMeta {
 }
 
 export async function* generatePostStream(
-  postType: PostType,
+  postType: PostType | string,
   topic: string,
-  tone: PostTone,
+  tone: PostTone | string,
+  platform: PlatformId = 'linkedin',
 ): AsyncGenerator<string> {
   const startTime = Date.now();
-  const config = POST_TYPES[postType];
+
+  // Resolve system prompt and content guidance — platform post types take priority
+  let systemPrompt: string;
+  let contentGuidance: string;
+  let postTypeLabel: string;
+  let maxChars: number;
+
+  const platformPostType = getPlatformPostType(platform, postType);
+  if (platformPostType) {
+    systemPrompt = platformPostType.systemPrompt;
+    contentGuidance = platformPostType.contentGuidance;
+    postTypeLabel = platformPostType.label;
+    maxChars = PLATFORMS[platform].maxChars;
+  } else {
+    // Fall back to legacy LinkedIn post types
+    const config = POST_TYPES[postType as PostType];
+    systemPrompt = config?.systemPrompt ?? 'You are a professional content writer.';
+    contentGuidance = config?.contentGuidance ?? '';
+    postTypeLabel = config?.label ?? postType;
+    maxChars = 3000;
+  }
+
+  const platformLabel = PLATFORMS[platform]?.name ?? 'LinkedIn';
 
   // Research phase
-  const query = buildSearchQuery(postType, topic);
+  const query = buildSearchQuery(postType as PostType, topic);
   const results = await searchGoogle(query);
 
   let researchSummary = '';
@@ -50,28 +74,30 @@ export async function* generatePostStream(
     researchOutputTokens = researchRes.usage.output_tokens;
   }
 
-  const toneInstructions: Record<PostTone, string> = {
+  const toneInstructions: Record<string, string> = {
     professional: 'Tone: Professional, authoritative, insight-driven.',
     casual: 'Tone: Conversational and warm. Like talking to a peer.',
     provocative: 'Tone: Bold and contrarian. Challenge conventional wisdom.',
     storytelling: 'Tone: Narrative-driven. Start with a scene or moment.',
   };
+  const toneInstruction = toneInstructions[tone] ?? `Tone: ${tone}.`;
 
-  const userPrompt = `Draft a LinkedIn post for Bitloom.
+  const userPrompt = `Draft a ${platformLabel} post for Bitloom.
 
-Post Type: ${config.label}
+Platform: ${platformLabel} (max ${maxChars} characters)
+Post Type: ${postTypeLabel}
 Topic: ${topic}
-${toneInstructions[tone]}
-Content Guidance: ${config.contentGuidance}
+${toneInstruction}
+Content Guidance: ${contentGuidance}
 
 ${researchSummary ? `Research:\n${researchSummary}` : ''}
 
-Return ONLY the final LinkedIn post. No preamble.`;
+Return ONLY the final post content. No preamble. Respect the character limit.`;
 
   const stream = anthropic.messages.stream({
     model: MODEL,
-    max_tokens: 1024,
-    system: config.systemPrompt,
+    max_tokens: 1200,
+    system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });
 

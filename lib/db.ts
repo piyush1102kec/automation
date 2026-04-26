@@ -57,6 +57,7 @@ function runMigrations(db: Database.Database) {
   if (!postCols.includes('generation_time_ms')) db.exec(`ALTER TABLE posts ADD COLUMN generation_time_ms INTEGER DEFAULT 0`);
   if (!postCols.includes('total_cost_usd')) db.exec(`ALTER TABLE posts ADD COLUMN total_cost_usd REAL DEFAULT 0`);
   if (!postCols.includes('model')) db.exec(`ALTER TABLE posts ADD COLUMN model TEXT DEFAULT 'claude-sonnet-4-5'`);
+  if (!postCols.includes('platform')) db.exec(`ALTER TABLE posts ADD COLUMN platform TEXT DEFAULT 'linkedin'`);
 
   // News cache table
   db.exec(`
@@ -120,6 +121,25 @@ function runMigrations(db: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_topics_post_type ON topic_shortcuts (post_type);
+  `);
+
+  // Post schedules (multi-platform automated posting)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS post_schedules (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform           TEXT NOT NULL DEFAULT 'linkedin',
+      post_type          TEXT NOT NULL,
+      frequency          TEXT NOT NULL DEFAULT 'working_days'
+                         CHECK (frequency IN ('daily', 'working_days', 'weekends', 'custom')),
+      custom_days        TEXT NOT NULL DEFAULT '[]',
+      time               TEXT NOT NULL DEFAULT '09:00',
+      tone               TEXT NOT NULL DEFAULT 'professional',
+      default_topic      TEXT,
+      is_active          INTEGER NOT NULL DEFAULT 1,
+      last_generated_at  TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_schedules_platform ON post_schedules (platform, is_active);
   `);
 }
 

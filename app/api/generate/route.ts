@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generatePostStream, type GenerateMeta } from '@/lib/post-generator';
 import { createPost } from '@/lib/db-queries';
 import type { PostType, PostTone } from '@/lib/post-types';
+import type { PlatformId } from '@/lib/platforms';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,16 +10,18 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { postType, topic, tone } = body as {
+    const { postType, topic, tone, platform } = body as {
       postType: PostType;
       topic: string;
       tone: PostTone;
+      platform?: PlatformId;
     };
 
     if (!postType || !topic) {
       return NextResponse.json({ error: 'postType and topic are required' }, { status: 400 });
     }
 
+    const resolvedPlatform: PlatformId = platform ?? 'linkedin';
     const encoder = new TextEncoder();
     let fullContent = '';
     let meta: GenerateMeta | null = null;
@@ -26,7 +29,7 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of generatePostStream(postType, topic, tone ?? 'professional')) {
+          for await (const chunk of generatePostStream(postType, topic, tone ?? 'professional', resolvedPlatform)) {
             if (chunk.includes('__META__')) {
               const parts = chunk.split('__META__');
               const textPart = parts[0];
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest) {
               generation_time_ms: meta?.timeMs ?? 0,
               total_cost_usd: meta?.costUsd ?? 0,
               model: meta?.model ?? 'claude-sonnet-4-5',
+              platform: resolvedPlatform,
             });
             postId = post.id;
           } catch { /* DB failure shouldn't break stream */ }

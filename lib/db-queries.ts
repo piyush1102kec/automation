@@ -20,6 +20,7 @@ export interface Post {
   generation_time_ms: number;
   total_cost_usd: number;
   model: string;
+  platform: string;
 }
 
 export interface ListPostsOptions {
@@ -77,12 +78,13 @@ export function createPost(data: {
   generation_time_ms?: number;
   total_cost_usd?: number;
   model?: string;
+  platform?: string;
 }): Post {
   const db = getDb();
   const result = db.prepare(`
     INSERT INTO posts (source, post_type, topic, tone, content, research, status, scheduled_for, n8n_run_id,
-                       input_tokens, output_tokens, generation_time_ms, total_cost_usd, model)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       input_tokens, output_tokens, generation_time_ms, total_cost_usd, model, platform)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.source,
     data.post_type,
@@ -98,6 +100,7 @@ export function createPost(data: {
     data.generation_time_ms ?? 0,
     data.total_cost_usd ?? 0,
     data.model ?? 'claude-sonnet-4-5',
+    data.platform ?? 'linkedin',
   );
   return getPost(result.lastInsertRowid as number)!;
 }
@@ -419,4 +422,83 @@ export function addTopicShortcut(postType: string, topic: string): void {
 
 export function deleteTopicShortcut(id: number): void {
   getDb().prepare(`DELETE FROM topic_shortcuts WHERE id = ?`).run(id);
+}
+
+// ── Post schedules ──────────────────────────────────────────────────────────
+
+export interface PostSchedule {
+  id: number;
+  platform: string;
+  post_type: string;
+  frequency: 'daily' | 'working_days' | 'weekends' | 'custom';
+  custom_days: string; // JSON array of day numbers [0-6]
+  time: string; // "HH:MM"
+  tone: string;
+  default_topic: string | null;
+  is_active: number;
+  last_generated_at: string | null;
+  created_at: string;
+}
+
+export function listSchedules(platform?: string): PostSchedule[] {
+  const db = getDb();
+  if (platform) {
+    return db.prepare(`SELECT * FROM post_schedules WHERE platform = ? ORDER BY created_at DESC`).all(platform) as PostSchedule[];
+  }
+  return db.prepare(`SELECT * FROM post_schedules ORDER BY platform, created_at DESC`).all() as PostSchedule[];
+}
+
+export function getSchedule(id: number): PostSchedule | null {
+  return (getDb().prepare(`SELECT * FROM post_schedules WHERE id = ?`).get(id) as PostSchedule | undefined) ?? null;
+}
+
+export function createSchedule(data: Omit<PostSchedule, 'id' | 'last_generated_at' | 'created_at'>): PostSchedule {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO post_schedules (platform, post_type, frequency, custom_days, time, tone, default_topic, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.platform,
+    data.post_type,
+    data.frequency,
+    data.custom_days,
+    data.time,
+    data.tone,
+    data.default_topic ?? null,
+    data.is_active,
+  );
+  return getSchedule(result.lastInsertRowid as number)!;
+}
+
+export function updateSchedule(id: number, data: Partial<Omit<PostSchedule, 'id' | 'created_at'>>): PostSchedule | null {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: unknown[] = [];
+
+  if (data.platform !== undefined) { fields.push('platform = ?'); params.push(data.platform); }
+  if (data.post_type !== undefined) { fields.push('post_type = ?'); params.push(data.post_type); }
+  if (data.frequency !== undefined) { fields.push('frequency = ?'); params.push(data.frequency); }
+  if (data.custom_days !== undefined) { fields.push('custom_days = ?'); params.push(data.custom_days); }
+  if (data.time !== undefined) { fields.push('time = ?'); params.push(data.time); }
+  if (data.tone !== undefined) { fields.push('tone = ?'); params.push(data.tone); }
+  if (data.default_topic !== undefined) { fields.push('default_topic = ?'); params.push(data.default_topic); }
+  if (data.is_active !== undefined) { fields.push('is_active = ?'); params.push(data.is_active); }
+  if (data.last_generated_at !== undefined) { fields.push('last_generated_at = ?'); params.push(data.last_generated_at); }
+
+  if (fields.length === 0) return getSchedule(id);
+  params.push(id);
+  db.prepare(`UPDATE post_schedules SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+  return getSchedule(id);
+}
+
+export function deleteSchedule(id: number): boolean {
+  const result = getDb().prepare(`DELETE FROM post_schedules WHERE id = ?`).run(id);
+  return result.changes > 0;
+}
+
+export function getPlatformBreakdown(): { platform: string; count: number; total_cost_usd: number }[] {
+  return getDb().prepare(`
+    SELECT platform, COUNT(*) AS count, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd
+    FROM posts GROUP BY platform ORDER BY count DESC
+  `).all() as { platform: string; count: number; total_cost_usd: number }[];
 }
