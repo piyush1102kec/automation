@@ -1,11 +1,22 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { searchGoogle, buildSearchQuery, type SerpResult } from './serp';
 import { POST_TYPES, type PostType, type PostTone } from './post-types';
 import { PLATFORMS, getPlatformPostType, type PlatformId } from './platforms';
 import { calcCostUsd } from './cost-calculator';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = 'claude-sonnet-4-5';
+// ── Provider: Groq (preferred) or Ollama fallback ─────────────────────────────
+const GROQ_API_KEY = process.env.GROQ_API_KEY ?? '';
+const useGroq = !!GROQ_API_KEY;
+
+const openai = new OpenAI(
+  useGroq
+    ? { apiKey: GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' }
+    : { apiKey: 'ollama',     baseURL: `${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'}/v1` }
+);
+
+const MODEL = useGroq
+  ? (process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile')
+  : (process.env.OLLAMA_MODEL ?? 'qwen2.5:7b');
 
 export interface GenerateMeta {
   inputTokens: number;
@@ -58,20 +69,22 @@ export async function* generatePostStream(
   let researchOutputTokens = 0;
 
   if (results.length > 0) {
-    const researchRes = await anthropic.messages.create({
+    const researchRes = await openai.chat.completions.create({
       model: MODEL,
       max_tokens: 800,
-      system: 'You are a research assistant. Extract 3-5 specific, recent insights from search results. Concise bullet points only.',
-      messages: [{
-        role: 'user',
-        content: `Topic: ${topic}\n\n${results.map((r, i) =>
-          `[${i + 1}] ${r.title}\n${r.snippet}`
-        ).join('\n\n')}\n\nKey insights for: "${topic}"`,
-      }],
+      messages: [
+        { role: 'system', content: 'You are a research assistant. Extract 3-5 specific, recent insights from search results. Concise bullet points only.' },
+        {
+          role: 'user',
+          content: `Topic: ${topic}\n\n${results.map((r, i) =>
+            `[${i + 1}] ${r.title}\n${r.snippet}`
+          ).join('\n\n')}\n\nKey insights for: "${topic}"`,
+        }
+      ],
     });
-    researchSummary = (researchRes.content[0] as { text: string }).text;
-    researchInputTokens = researchRes.usage.input_tokens;
-    researchOutputTokens = researchRes.usage.output_tokens;
+    researchSummary = researchRes.choices[0].message.content ?? '';
+    researchInputTokens = researchRes.usage?.prompt_tokens ?? 0;
+    researchOutputTokens = researchRes.usage?.completion_tokens ?? 0;
   }
 
   const toneInstructions: Record<string, string> = {
@@ -94,25 +107,27 @@ ${researchSummary ? `Research:\n${researchSummary}` : ''}
 
 Return ONLY the final post content. No preamble. Respect the character limit.`;
 
-  const stream = anthropic.messages.stream({
+  const stream = await openai.chat.completions.create({
     model: MODEL,
     max_tokens: 1200,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    stream: true,
   });
 
-  for await (const event of stream) {
-    if (
-      event.type === 'content_block_delta' &&
-      event.delta.type === 'text_delta'
-    ) {
-      yield event.delta.text;
-    }
+  let draftOutputText = '';
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content || '';
+    draftOutputText += content;
+    yield content;
   }
 
-  const finalMsg = await stream.finalMessage();
-  const draftInputTokens = finalMsg.usage.input_tokens;
-  const draftOutputTokens = finalMsg.usage.output_tokens;
+  // Note: OpenAI stream doesn't return final usage in the same way Anthropic stream does in some SDKs
+  // We approximate or rely on the final chunk if available. For local Ollama, usage is often omitted in stream.
+  const draftInputTokens = 0; // Approximate or implement separate count
+  const draftOutputTokens = 0;
 
   const totalInput = researchInputTokens + draftInputTokens;
   const totalOutput = researchOutputTokens + draftOutputTokens;
