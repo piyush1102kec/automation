@@ -77,12 +77,13 @@ export function createPost(data: {
   generation_time_ms?: number;
   total_cost_usd?: number;
   model?: string;
+  platform?: string;
 }): Post {
   const db = getDb();
   const result = db.prepare(`
     INSERT INTO posts (source, post_type, topic, tone, content, research, status, scheduled_for, n8n_run_id,
-                       input_tokens, output_tokens, generation_time_ms, total_cost_usd, model)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       input_tokens, output_tokens, generation_time_ms, total_cost_usd, model, platform)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.source,
     data.post_type,
@@ -97,7 +98,8 @@ export function createPost(data: {
     data.output_tokens ?? 0,
     data.generation_time_ms ?? 0,
     data.total_cost_usd ?? 0,
-    data.model ?? 'claude-sonnet-4-5',
+    data.model ?? 'qwen2.5-coder:32b',
+    data.platform ?? 'linkedin',
   );
   return getPost(result.lastInsertRowid as number)!;
 }

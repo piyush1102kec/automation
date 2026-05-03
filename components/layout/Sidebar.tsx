@@ -62,7 +62,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="font-bold text-white text-sm leading-tight tracking-tight">PostPilot</div>
-          <div className="text-[11px] text-slate-500 font-medium">Enterprise · by Bitloom</div>
+          <div className="text-[11px] text-slate-500 font-medium">Enterprise</div>
         </div>
       </div>
 
@@ -111,8 +111,8 @@ export function Sidebar() {
             B
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-slate-300 truncate">Bitloom</div>
-            <div className="text-[11px] text-slate-500 truncate">piyush@bitloom.ai</div>
+            <div className="text-xs font-semibold text-slate-300 truncate">Bhardwaj</div>
+            <div className="text-[11px] text-slate-500 truncate">piyush@postpilot.ai</div>
           </div>
         </div>
       </div>

@@ -1,241 +1,183 @@
-# PostPilot — Enterprise LinkedIn Content Automation + n8n Automation Builder
+# PostPilot — AI Content Engine + Automation Builder
 
-> AI-powered LinkedIn post generation and n8n workflow automation for Bitloom | Built on Next.js 14, Claude AI, and Creatio ecosystem intelligence
+A personal project by **Piyush Bhardwaj**. PostPilot started as a LinkedIn content automation tool for Bitloom (a Creatio CRM consultancy in BFSI) and has evolved into a broader vision: letting anyone describe an automation in plain English and get a working n8n workflow instantly — no code, no drag-and-drop.
 
----
-
-## Overview
-
-PostPilot is an internal SaaS tool for **Bitloom** — a Creatio CRM implementation consultancy focused on the BFSI sector. It has two core capabilities:
-
-1. **LinkedIn Content Generation** — Live web research → Claude Sonnet drafts polished posts, streamed in real-time
-2. **Automation Builder** — Describe any automation in plain English → Groq (LLaMA) generates n8n workflow JSON → deployed to your n8n instance in one click
+> Looking for contributors and early users. If this resonates with you, open an issue or reach out.
 
 ---
 
-## Features
+## What It Does
 
-| Feature | Description |
+**Two tools in one:**
+
+1. **PostPilot** — AI-powered LinkedIn post generator. Give it a topic and tone, it searches the web for fresh insights, then streams a polished post back in real time.
+
+2. **Automation Builder** — Describe any workflow in natural language ("send a Slack message every time a Google Sheet row is added"), and the AI generates a valid n8n workflow JSON that you can deploy to your n8n instance in one click.
+
+---
+
+## Stack
+
+| Layer | Tech |
 |---|---|
-| **Generate Post** | Real-time streaming post generation with web research (Claude Sonnet 4.5) |
-| **Automation Builder** | Plain-English → n8n workflow JSON → deploy to n8n instantly |
-| **Post Types** | 5 built-in types + custom types and tones |
-| **Token Tracking** | Tokens, generation time, and USD cost per post |
-| **Analytics** | 14-day usage charts, cost by post type |
-| **News Intelligence** | Creatio news + AI-generated BFSI tech trends |
-| **Settings** | CRUD for post types, tones, and topic shortcuts |
-| **n8n Webhook** | Accept scheduled posts from n8n automations |
-| **Content Library** | Filter, edit, copy, and manage all posts |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 14 (App Router, TypeScript) |
-| Styling | Tailwind CSS v3 |
+| Framework | Next.js 14 (App Router) |
+| AI — inference | Groq API (LLaMA 3.3 70B) — free tier, ~1s response |
+| AI — fallback | Ollama (local, any OpenAI-compat model) |
+| Automation target | n8n (cloud or self-hosted) |
 | Database | SQLite via `better-sqlite3` |
-| AI — post generation | Anthropic Claude Sonnet 4.5 |
-| AI — workflow generation | Groq API — `llama-3.3-70b-versatile` (open-source, free) |
-| Research | SerpAPI (Google search) |
-| Streaming | SSE (Server-Sent Events) |
-| Automation | n8n REST API (self-hosted or cloud) |
+| Research | SerpAPI (web search for post grounding) |
+| Styling | Tailwind CSS + Lucide React |
+
+**AI cost: $0.** Groq's free tier handles the full load (14,400 req/day). Ollama is the local fallback — pull any model and it just works.
 
 ---
 
-## Project Structure
+## Setup
 
-```
-automation/
-├── app/
-│   ├── page.tsx                      # Enterprise dashboard
-│   ├── generate/page.tsx             # Post generation UI
-│   ├── posts/page.tsx                # Content library
-│   ├── analytics/page.tsx            # API usage & cost analytics
-│   ├── news/page.tsx                 # Creatio + BFSI intelligence feed
-│   ├── settings/page.tsx             # Post types, tones, topics CRUD
-│   ├── poc/page.tsx                  # Automation Builder UI
-│   └── api/
-│       ├── generate/route.ts         # Streaming post generation (Claude)
-│       ├── posts/route.ts            # Post CRUD
-│       ├── news/route.ts             # News fetch & cache
-│       ├── settings/route.ts         # Settings CRUD
-│       ├── webhook/route.ts          # n8n inbound webhook
-│       └── poc/
-│           ├── generate/route.ts     # Workflow generation (Groq)
-│           ├── push/route.ts         # Deploy workflow to n8n
-│           └── test-connection/route.ts  # Test n8n + AI connectivity
-├── components/
-│   ├── layout/Sidebar.tsx
-│   ├── generate/
-│   ├── posts/
-│   ├── poc/
-│   │   ├── N8nConnectionSetup.tsx   # n8n connection config card
-│   │   ├── PromptInput.tsx          # Natural language prompt input
-│   │   ├── WorkflowSteps.tsx        # Generated workflow step visualizer
-│   │   ├── WorkflowJsonPreview.tsx  # Collapsible raw JSON panel
-│   │   └── PushButton.tsx           # Deploy to n8n button
-│   └── ui/
-├── lib/
-│   ├── db.ts                         # SQLite singleton + migrations
-│   ├── db-queries.ts                 # All DB operations
-│   ├── post-generator.ts             # Research → Claude draft pipeline (SSE)
-│   ├── workflow-generator.ts         # Prompt → n8n JSON (Groq/Ollama)
-│   ├── n8n-client.ts                 # n8n REST API client
-│   ├── n8n-node-schemas.ts           # Schema library for 10 core n8n nodes
-│   ├── post-types.ts                 # Post type config + tones
-│   ├── cost-calculator.ts            # Token cost calculation
-│   ├── news-fetcher.ts               # Creatio scraper + BFSI AI insights
-│   └── serp.ts                       # SerpAPI search client
-├── types/
-│   └── n8n.ts                        # TypeScript types for n8n API
-└── data/
-    └── posts.db                      # SQLite database (auto-created)
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- [Anthropic API key](https://console.anthropic.com/) — for LinkedIn post generation
-- [Groq API key](https://console.groq.com) — free, for n8n workflow generation
-- A running n8n instance for the Automation Builder
-- [SerpAPI key](https://serpapi.com/) *(optional — research skipped gracefully if absent)*
-
-### Installation
+### 1. Install dependencies
 
 ```bash
-git clone <repo-url>
-cd automation
 npm install
 ```
 
-### Environment Variables
+### 2. Configure environment
 
-Create `.env.local` in the project root:
+Create `.env.local`:
 
 ```env
-# ── PostPilot (LinkedIn post generation) ─────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...         # Required: Claude API key
-SERPAPI_KEY=...                       # Optional: enables live web research
-WEBHOOK_SECRET=change-me-random       # Secures n8n inbound webhook
-NEXT_PUBLIC_APP_NAME=PostPilot
+# AI — pick one
+GROQ_API_KEY=gsk_...                    # Free at console.groq.com — recommended
+GROQ_MODEL=llama-3.3-70b-versatile     # Default if GROQ_API_KEY is set
 
-# ── Groq (Automation Builder — free, fast, open-source LLaMA) ────────────────
-# Get your key at: https://console.groq.com → API Keys
-GROQ_API_KEY=gsk_...
-GROQ_MODEL=llama-3.3-70b-versatile
+# If using Ollama instead of Groq
+OLLAMA_BASE_URL=http://localhost:11434  # Default
+OLLAMA_MODEL=qwen2.5:7b                # Any model you've pulled
 
-# ── n8n connection (for Automation Builder) ───────────────────────────────────
-N8N_BASE_URL=http://localhost:5678
-N8N_API_KEY=<your-n8n-api-key>
+# Optional but recommended
+SERPAPI_KEY=...                         # Web research for posts; skipped gracefully if absent
 
-# ── Ollama (optional fallback — requires GPU for acceptable speed) ────────────
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b
+# Required
+WEBHOOK_SECRET=change-me-random         # Secures the n8n inbound webhook
 ```
 
-### n8n Setup (self-hosted)
+### 3. Run
 
 ```bash
-docker run -d --name n8n -p 5678:5678 \
-  -v n8n_data:/home/node/.n8n \
-  docker.n8n.io/n8nio/n8n
+npm run dev     # Dev server at http://localhost:3000
+npm run build   # Production build
+npm start       # Run production server
+npm run lint    # ESLint
 ```
 
-Open `http://localhost:5678` → Settings → API → Create API key.
+### 4. Configure n8n connection (for Automation Builder)
 
-### Run
+In the app at `/poc`, enter your n8n base URL and API key. These are stored in browser localStorage — nothing is sent to any server.
 
-```bash
-npm run dev    # http://localhost:3000
-npm run build  # Production build
-npm start      # Run production server
-npm run lint   # ESLint check
+---
+
+## Architecture
+
+### Directory structure
+
+```
+app/
+  api/
+    generate/          # SSE streaming endpoint for post generation
+    posts/             # CRUD for saved posts
+    news/              # BFSI news feed
+    settings/          # App settings
+    webhook/           # Inbound n8n webhook (idempotent, secret-gated)
+    poc/
+      generate/        # Workflow generation from natural language
+      push/            # Deploy workflow to n8n instance
+      test-connection/ # Health check for n8n + AI provider
+  poc/                 # Automation Builder UI
+  generate/            # Post generator UI
+  posts/               # Post library
+  ...
+components/
+  poc/                 # Automation Builder components
+  generate/            # Post generation components
+  layout/              # Sidebar, shell
+lib/
+  post-generator.ts    # Research → insights → post draft pipeline
+  workflow-generator.ts # Natural language → n8n workflow JSON pipeline
+  n8n-client.ts        # n8n REST API client
+  n8n-node-schemas.ts  # Pre-mapped schemas for 10 core n8n nodes
+  news-fetcher.ts      # Creatio scraper + BFSI insights
+  db.ts                # SQLite singleton + auto-migrations
+  db-queries.ts        # All DB read/write operations
+  platforms.ts         # Per-platform post types, char limits, system prompts
+  serp.ts              # SerpAPI client
+  cost-calculator.ts   # Token cost tracking
+types/
+  n8n.ts               # Full TypeScript types for n8n API
 ```
 
----
+### Post generation pipeline (`lib/post-generator.ts`)
 
-## Automation Builder (`/poc`)
+1. Build search query from topic + post type
+2. Fetch top results via SerpAPI
+3. AI extracts 3–5 key insights (800 token budget)
+4. AI drafts final post with type/tone system prompt (1200 token budget), streamed via SSE
+5. Final SSE chunk: `__META__{...json}` — parsed by the API route, saved to DB, stripped before reaching the client
 
-Describe any automation → AI generates a valid n8n workflow → deploy in one click.
+### Workflow generation pipeline (`lib/workflow-generator.ts`)
 
-**How it works:**
-1. Enter your n8n URL + API key in the connection panel (saved to localStorage)
-2. Describe what you want (e.g. *"Every Monday 9am, fetch AI news and email a summary"*)
-3. Groq (`llama-3.3-70b`) generates a valid n8n workflow JSON with correct node types
-4. Review the generated steps and raw JSON
-5. Click **Deploy to n8n** — the workflow appears in your n8n canvas instantly
+1. Load schemas for 10 core n8n nodes into system prompt
+2. Send user's natural-language prompt to AI at temperature 0.1
+3. Strip `<think>` tokens (Qwen reasoning chains), extract JSON from fenced code blocks
+4. Normalize workflow: assign node positions, validate structure
+5. Derive human-readable `steps[]` summary from generated nodes
+6. Return `{ workflow, steps, explanation }` to the client
 
-**Supported node types:**
-`scheduleTrigger`, `webhook`, `httpRequest`, `gmail`, `slack`, `googleSheets`, `openAi`, `if`, `set`, `code`
+### n8n client (`lib/n8n-client.ts`)
 
-**Example prompts:**
-- *"Every Monday at 9am, send me an email summary of AI news"*
-- *"When a webhook is called, save the data to Google Sheets"*
-- *"Every day at 8am, check our website is up and send a Slack alert if it's down"*
-- *"When a new row is added to Google Sheets, send a welcome email via Gmail"*
-- *"Every hour, fetch crypto prices from an API and post a summary to Slack"*
+Typed REST client for the n8n Public API. Key detail: `POST /api/v1/workflows` rejects `active`, `id`, and `meta` fields — the client strips these before sending.
 
----
+### AI provider fallback
 
-## API Reference
+Three files (`post-generator.ts`, `news-fetcher.ts`, `workflow-generator.ts`) use the same pattern:
 
-### `POST /api/generate`
-Streams a generated LinkedIn post via SSE (Claude Sonnet 4.5).
+```typescript
+const GROQ_API_KEY = process.env.GROQ_API_KEY ?? '';
+const useGroq = !!GROQ_API_KEY;
+// If GROQ_API_KEY is set → Groq; else → Ollama at OLLAMA_BASE_URL
+```
 
-**Request:** `{ "postType": "thought_leadership", "topic": "...", "tone": "professional" }`
+### Database
 
-**Events:** `data: {"type":"text","text":"..."}` · `data: {"type":"done","postId":42,"meta":{...}}`
+SQLite, auto-created at `data/posts.db` on first run. Schema migrations run automatically via `PRAGMA table_info` guards — never manual. Always call `getDb()` inside function bodies (lazy init, server-side only).
 
----
+Key tables: `posts`, `news_cache`, `custom_post_types`, `post_type_overrides`, `custom_tones`, `topic_shortcuts`, `post_schedules`, `settings`.
 
-### `POST /api/poc/generate`
-Generates n8n workflow JSON from a plain-English prompt (Groq).
+### n8n webhook (`app/api/webhook/route.ts`)
 
-**Request:** `{ "prompt": "..." }`
-
-**Response:** `{ "workflow": {...}, "explanation": "...", "steps": [...] }`
+Secured via `x-webhook-secret` header matched against `WEBHOOK_SECRET` env var. Idempotent: duplicate calls with the same `n8n_run_id` are silently ignored.
 
 ---
 
-### `POST /api/poc/push`
-Deploys a generated workflow to n8n.
+## Roadmap
 
-**Request:** `{ "workflow": {...}, "connectionConfig": { "baseUrl": "...", "apiKey": "..." } }`
-
-**Response:** `{ "workflowId": "abc123", "workflowUrl": "http://localhost:5678/workflow/abc123", "activated": false }`
-
----
-
-### `POST /api/poc/test-connection`
-Tests n8n connectivity and AI provider health.
-
-**Response:** `{ "connected": true, "workflowCount": 3, "ollama": { "ok": true, "model": "Groq · llama-3.3-70b-versatile" } }`
+- [ ] **Action-based Builder UI** — render generated nodes as interactive cards, not just JSON
+- [ ] **Bidirectional n8n sync** — pull existing workflows back into the editor
+- [ ] **Self-healing workflows** — feed n8n execution errors back to the AI for automatic fixes
+- [ ] **More platforms** — Twitter/X, Instagram, Threads post generation
+- [ ] **Scheduled posting** — direct publish via platform APIs
 
 ---
 
-### `POST /api/webhook`
-Accepts automated posts from n8n. Idempotent — duplicate `n8n_run_id` values are silently ignored.
+## Contributing
 
-**Headers:** `x-webhook-secret: <WEBHOOK_SECRET>`
-
----
-
-## Developer Notes
-
-- **DB init** — SQLite is lazily initialized via `getDb()`. Never call DB functions at module scope.
-- **Migrations** — New columns use `PRAGMA table_info` guards before `ALTER TABLE`.
-- **Streaming** — The generate endpoint yields SSE chunks. The final `__META__` marker carries token/cost data, parsed and stripped before saving.
-- **AI providers** — Post generation uses Anthropic Claude (set `ANTHROPIC_API_KEY`). Workflow generation uses Groq if `GROQ_API_KEY` is set, else falls back to Ollama.
-- **n8n create API** — The `active`, `id`, and `meta` fields are read-only in n8n's `POST /workflows` and are stripped before sending.
+This is a personal project — I'm not affiliated with any company. If you want to contribute, fix a bug, or just want to try it and give feedback, open an issue. All welcome.
 
 ---
 
 ## License
 
-Internal tool — Bitloom confidential. Not for external distribution.
+Dual-licensed — choose what fits your use case:
+
+- **MIT** — personal use, contributors, open-source forks
+- **AGPL v3** — commercial use or hosted services (requires you to open-source your version)
+
+See [LICENSE](./LICENSE) for full terms.
