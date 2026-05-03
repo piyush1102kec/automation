@@ -1,5 +1,19 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { clearAndInsertNews, getNewsAge, getNewsBySource, type NewsItem } from './db-queries';
+
+// Use Groq if available, else fall back to Ollama
+const GROQ_API_KEY = process.env.GROQ_API_KEY ?? '';
+const useGroq = !!GROQ_API_KEY;
+
+const openai = new OpenAI(
+  useGroq
+    ? { apiKey: GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' }
+    : { apiKey: 'ollama', baseURL: `${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'}/v1` }
+);
+
+const MODEL = useGroq
+  ? (process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile')
+  : (process.env.OLLAMA_MODEL ?? 'qwen2.5:7b');
 
 const CREATIO_NEWS_URL = 'https://www.creatio.com/company/news';
 const SIX_HOURS = 6 * 60 * 60 * 1000;
@@ -62,11 +76,9 @@ async function fetchCreatioNews(): Promise<Omit<NewsItem, 'id' | 'fetched_at'>[]
 }
 
 async function generateBfsiInsights(): Promise<Omit<NewsItem, 'id' | 'fetched_at'>[]> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
   try {
-    const res = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+    const res = await openai.chat.completions.create({
+      model: MODEL,
       max_tokens: 2000,
       messages: [{
         role: 'user',
@@ -93,7 +105,7 @@ Return ONLY the JSON array, no other text.`,
       }],
     });
 
-    const text = (res.content[0] as { text: string }).text.trim();
+    const text = res.choices[0].message.content?.trim() || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
 

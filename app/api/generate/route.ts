@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Save post with full token + cost data
           let postId: number | undefined;
           try {
             const post = createPost({
@@ -59,6 +58,7 @@ export async function POST(req: NextRequest) {
               generation_time_ms: meta?.timeMs ?? 0,
               total_cost_usd: meta?.costUsd ?? 0,
               model: meta?.model ?? 'claude-sonnet-4-5',
+              platform: 'linkedin',
             });
             postId = post.id;
           } catch { /* DB failure shouldn't break stream */ }
